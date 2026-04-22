@@ -303,7 +303,7 @@ const MediaBuyerDashboardPage = () => {
         </Card>
       </div>
 
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+      {/* <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
         <h2 className="text-lg sm:text-xl font-semibold">Your Promo Codes</h2>
         <Button
           onClick={() => setCreateLinkModalOpen(true)}
@@ -312,7 +312,7 @@ const MediaBuyerDashboardPage = () => {
           <LinkIcon className="h-4 w-4 mr-2" />
           Create New Link
         </Button>
-      </div>
+      </div> */}
 
       <div className="rounded-lg shadow-sm border mb-8 overflow-x-auto">
         <Table>

@@ -18,6 +18,7 @@ export async function GET(
   const page = parseInt(searchParams.get("page") || "1");
   const limit = parseInt(searchParams.get("limit") || "20");
 
+  // Verify the user is referred by this media buyer
   const referral = await db.userPromoCode.findFirst({
     where: {
       userId,
@@ -54,20 +55,31 @@ export async function GET(
     db.transaction.count({ where: { userId } }),
   ]);
 
+  // ---------- Summary cards (only success) ----------
   const aggregates = await db.transaction.groupBy({
+    by: ["type", "category"],
+    where: { userId, status: "success" },
+    _sum: { amount: true },
+  });
+
+  // Pending deposits with category ≠ "transaction" for Turnover (plus)
+  const pendingDepositsAgg = await db.transaction.groupBy({
     by: ["type", "category"],
     where: {
       userId,
-      status: "success",
+      type: "deposit",
+      status: "pending",
+      category: { not: "transaction" },
     },
     _sum: { amount: true },
   });
 
   let depositsCategoryTransactions = new Prisma.Decimal(0);
   let withdrawalsCategoryTransactions = new Prisma.Decimal(0);
-  let depositsOther = new Prisma.Decimal(0);
-  let withdrawalsOther = new Prisma.Decimal(0);
+  let depositsOther = new Prisma.Decimal(0);   // Turnover plus
+  let withdrawalsOther = new Prisma.Decimal(0); // Turnover minus
 
+  // Process successful transactions
   aggregates.forEach((agg) => {
     const amount = agg._sum.amount || new Prisma.Decimal(0);
     const isTransactionsCategory = agg.category === "transaction";
@@ -87,23 +99,47 @@ export async function GET(
     }
   });
 
-  const commissionEarned = await db.influencerEarning.aggregate({
-    where: {
-      influencerId: mediaBuyerId,
-      sourceUserId: userId,
-    },
-    _sum: { amount: true },
+  // Add pending deposits (category ≠ "transaction") to Turnover (plus)
+  pendingDepositsAgg.forEach((agg) => {
+    const amount = agg._sum.amount || new Prisma.Decimal(0);
+    depositsOther = depositsOther.add(amount);
   });
+
+  // ---------- NGR for this specific user ----------
+  // NGR = successful withdrawals (category ≠ "transaction") - (successful + pending) deposits (category ≠ "transaction")
+  const [ngrW, ngrD] = await Promise.all([
+    db.transaction.aggregate({
+      where: {
+        userId,
+        type: "withdrawal",
+        status: "success",
+        category: { not: "transaction" },
+      },
+      _sum: { amount: true },
+    }),
+    db.transaction.aggregate({
+      where: {
+        userId,
+        type: "deposit",
+        status: { in: ["success", "pending"] },
+        category: { not: "transaction" },
+      },
+      _sum: { amount: true },
+    }),
+  ]);
+  const totalWd = ngrW._sum.amount || new Prisma.Decimal(0);
+  const totalDp = ngrD._sum.amount || new Prisma.Decimal(0);
+  const userNgr = totalWd.minus(totalDp);
 
   return NextResponse.json({
     user,
     promoCode: referral.promoCode.code,
-    commissionEarned: commissionEarned._sum.amount || new Prisma.Decimal(0),
+    ngr: userNgr.toString(),
     summary: {
-      depositsCategoryTransactions,
-      withdrawalsCategoryTransactions,
-      depositsOther,
-      withdrawalsOther,
+      depositsCategoryTransactions: depositsCategoryTransactions.toString(),
+      withdrawalsCategoryTransactions: withdrawalsCategoryTransactions.toString(),
+      depositsOther: depositsOther.toString(),
+      withdrawalsOther: withdrawalsOther.toString(),
     },
     transactions,
     pagination: {

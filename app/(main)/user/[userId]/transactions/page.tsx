@@ -66,7 +66,7 @@ const UserTransactionsPage = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [promoCode, setPromoCode] = useState<string>("");
-  const [commissionEarned, setCommissionEarned] = useState<string>("0");
+  const [ngr, setNgr] = useState<string>("0");
   const [summary, setSummary] = useState<Summary>({
     depositsCategoryTransactions: "0",
     withdrawalsCategoryTransactions: "0",
@@ -95,7 +95,7 @@ const UserTransactionsPage = () => {
       setTransactions(data.transactions);
       setUserInfo(data.user);
       setPromoCode(data.promoCode);
-      setCommissionEarned(data.commissionEarned);
+      setNgr(data.ngr);
       setSummary(data.summary);
       setPagination(data.pagination);
     } catch (error) {
@@ -217,12 +217,12 @@ const UserTransactionsPage = () => {
       <Card className="bg-black border-gray-800 mb-6">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg font-medium text-white flex items-center gap-2">
-            Total Commission Earned
+            Total NGR
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-2xl sm:text-3xl font-bold text-yellow-400">
-            {formatAmount(commissionEarned)}
+            {formatAmount(ngr)}
           </div>
         </CardContent>
       </Card>

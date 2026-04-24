@@ -61,6 +61,10 @@ interface MediaBuyerDashboard {
   totalCommission: number;
   totalDeposits: string;
   totalWithdrawals: string;
+  totalNgr: string;
+  totalBalance: string;
+  commissionPercent: number;
+  totalOwnWithdrawals: string;
   assignedPromoCodes: {
     id: string;
     code: string;
@@ -86,6 +90,7 @@ interface MediaBuyerDashboard {
     promoCodeUsed: string;
     joinedAt: string;
     totalCommission: string;
+    ngr: string;
     transactions: {
       id: string;
       type: string;
@@ -107,6 +112,16 @@ const MediaBuyerDashboardPage = () => {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [createLinkModalOpen, setCreateLinkModalOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  const [balanceDetailsOpen, setBalanceDetailsOpen] = useState(false);
+  const [withdrawalsList, setWithdrawalsList] = useState<any[]>([]);
+  const [withdrawalsPagination, setWithdrawalsPagination] = useState({
+    page: 1,
+    totalPages: 1,
+    total: 0,
+  });
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
   const [newLinkForm, setNewLinkForm] = useState({
     description: "",
     type: "DEPOSIT_BONUS",
@@ -143,6 +158,33 @@ const MediaBuyerDashboardPage = () => {
     fetchDashboard();
   }, [userPage]);
 
+  const openBalanceDetails = async (page = 1) => {
+    setBalanceDetailsOpen(true);
+    setLoadingDetails(true);
+    try {
+      const res = await fetch(
+        `/api/media-buyer/balance?details=true&page=${page}&limit=10`
+      );
+      if (res.ok) {
+        const d = await res.json();
+        setWithdrawalsList(d.withdrawals);
+        setWithdrawalsPagination({
+          page: d.withdrawalsPagination.page,
+          totalPages: d.withdrawalsPagination.totalPages,
+          total: d.withdrawalsPagination.total,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const handleDetailsPageChange = (newPage: number) => {
+    openBalanceDetails(newPage);
+  };
+
   const handleCreateLink = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
@@ -172,7 +214,9 @@ const MediaBuyerDashboardPage = () => {
         commissionPercentage: newLinkForm.commissionPercentage
           ? parseFloat(newLinkForm.commissionPercentage)
           : 1.0,
-        maxUses: newLinkForm.maxUses ? parseInt(newLinkForm.maxUses) : null,
+        maxUses: newLinkForm.maxUses
+          ? parseInt(newLinkForm.maxUses)
+          : null,
         startDate: newLinkForm.startDate,
         endDate: newLinkForm.endDate || null,
       };
@@ -257,6 +301,145 @@ const MediaBuyerDashboardPage = () => {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto mt-2 sm:mt-0">
+      <div className="mb-6">
+        <Card className="bg-black border-gray-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-medium text-white text-center sm:text-left">
+              Available Balance
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
+              <div className="text-3xl font-bold text-green-400">
+                {formatAmount(data.totalBalance)}
+              </div>
+              <Button variant="outline" onClick={() => openBalanceDetails()}>
+                Details
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog open={balanceDetailsOpen} onOpenChange={setBalanceDetailsOpen}>
+        <DialogContent className="bg-black border-gray-800 max-h-[80vh] overflow-y-auto w-[95vw] sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Balance Calculation</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="text-gray-400">NGR</div>
+                <div className="text-right font-mono">
+                  {formatAmount(data.totalNgr)}
+                </div>
+                <div className="text-gray-400">Rate</div>
+                <div className="text-right font-mono">
+                  {data.commissionPercent}%
+                </div>
+                <div className="text-gray-400">Commission Earned</div>
+                <div className="text-right font-mono">
+                  {formatAmount(
+                    (
+                      parseFloat(data.totalNgr) *
+                      data.commissionPercent /
+                      100
+                    ).toString()
+                  )}
+                </div>
+                <div className="text-gray-400">Withdrawals</div>
+                <div className="text-right font-mono text-yellow-400">
+                  – {formatAmount(data.totalOwnWithdrawals)}
+                </div>
+                <hr className="col-span-2 border-gray-700" />
+                <div className="text-white font-semibold">Available Balance</div>
+                <div className="text-right font-mono font-bold text-green-400">
+                  {formatAmount(data.totalBalance)}
+                </div>
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-400 mb-2">
+                Your Withdrawals
+              </h3>
+              {loadingDetails ? (
+                <div className="text-center py-4 text-gray-400">Loading...</div>
+              ) : withdrawalsList.length === 0 ? (
+                <div className="text-center py-4 text-gray-500">
+                  No withdrawals yet.
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {withdrawalsList.map((w: any) => (
+                      <div
+                        key={w.id}
+                        className="flex justify-between items-center border-b border-gray-800 pb-2 text-sm"
+                      >
+                        <div className="text-gray-300">
+                          {dateFormatter.toIndianDateTime(w.createdAt)}
+                        </div>
+                        <div className="text-yellow-400 font-mono">
+                          {formatAmount(w.amount)}
+                        </div>
+                        <div className="text-gray-500 text-xs">
+                          {w.description || ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {withdrawalsPagination.totalPages > 1 && (
+                    <div className="flex items-center justify-between mt-4 pt-2 border-t border-gray-700">
+                      <div className="text-xs text-gray-400">
+                        Page {withdrawalsPagination.page} of{" "}
+                        {withdrawalsPagination.totalPages}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={withdrawalsPagination.page <= 1}
+                          onClick={() =>
+                            handleDetailsPageChange(
+                              withdrawalsPagination.page - 1
+                            )
+                          }
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={
+                            withdrawalsPagination.page >=
+                            withdrawalsPagination.totalPages
+                          }
+                          onClick={() =>
+                            handleDetailsPageChange(
+                              withdrawalsPagination.page + 1
+                            )
+                          }
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBalanceDetailsOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 sm:mb-8">
         <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
@@ -274,14 +457,13 @@ const MediaBuyerDashboardPage = () => {
         <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">
-              Total Commission
+              Total NGR
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center">
-              <IndianRupee className="h-5 w-5 text-yellow-500 mr-2" />
-              <span className="text-2xl font-bold">
-                {formatAmount(data.totalCommission)}
+              <span className="text-2xl font-bold text-sky-400">
+                {formatAmount(data.totalNgr)}
               </span>
             </div>
           </CardContent>
@@ -294,8 +476,7 @@ const MediaBuyerDashboardPage = () => {
           </CardHeader>
           <CardContent>
             <div className="flex items-center">
-              <TrendingUp className="h-5 w-5 text-green-500 mr-2" />
-              <span className="text-2xl font-bold">
+              <span className="text-2xl font-bold text-orange-400">
                 {formatAmount(data.totalDeposits)}
               </span>
             </div>
@@ -321,7 +502,6 @@ const MediaBuyerDashboardPage = () => {
               <TableHead className="whitespace-nowrap">Code</TableHead>
               <TableHead className="whitespace-nowrap">Type</TableHead>
               <TableHead className="whitespace-nowrap">Bonus Details</TableHead>
-              <TableHead className="whitespace-nowrap">Commission</TableHead>
               <TableHead className="whitespace-nowrap">Uses</TableHead>
               <TableHead className="whitespace-nowrap">Status</TableHead>
               <TableHead className="whitespace-nowrap">Actions</TableHead>
@@ -367,9 +547,6 @@ const MediaBuyerDashboardPage = () => {
                     )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {promo.commissionPercentage}%
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
                     {promo.currentUses}
                     {promo.maxUses && ` / ${promo.maxUses}`}
                   </TableCell>
@@ -413,7 +590,7 @@ const MediaBuyerDashboardPage = () => {
               <TableHead className="whitespace-nowrap">User</TableHead>
               <TableHead className="whitespace-nowrap">Promo Code</TableHead>
               <TableHead className="whitespace-nowrap">Joined</TableHead>
-              <TableHead className="whitespace-nowrap">Commission</TableHead>
+              <TableHead className="whitespace-nowrap">NGR</TableHead>
               <TableHead className="whitespace-nowrap">Transactions</TableHead>
             </TableRow>
           </TableHeader>
@@ -446,29 +623,23 @@ const MediaBuyerDashboardPage = () => {
                     {dateFormatter.toIndianDateTime(user.joinedAt)}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    <span className="font-medium text-green-400">
-                      {formatAmount(user.totalCommission)}
+                    <span className="font-medium">
+                      {formatAmount(user.ngr)}
                     </span>
                   </TableCell>
                   <TableCell>
-                    {user.transactions.length > 0 ? (
-                      <Button
-                        asChild
-                        variant="outline"
-                        size="sm"
-                        className="w-full sm:w-auto"
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="w-full sm:w-auto"
+                    >
+                      <Link
+                        href={`/user/${user.id}/transactions`}
                       >
-                        <Link
-                          href={`/user/${user.id}/transactions`}
-                        >
-                          View Transactions
-                        </Link>
-                      </Button>
-                    ) : (
-                      <span className="text-gray-500 text-sm pl-2">
-                        No transactions
-                      </span>
-                    )}
+                        View Transactions
+                      </Link>
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))
@@ -585,10 +756,10 @@ const MediaBuyerDashboardPage = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="DEPOSIT_BONUS">Deposit Bonus</SelectItem>
-                    {/* <SelectItem value="FREE_SPINS">Free Spins</SelectItem>
+                    <SelectItem value="FREE_SPINS">Free Spins</SelectItem>
                     <SelectItem value="CASHBACK">Cashback</SelectItem>
                     <SelectItem value="FREE_BET">Free Bet</SelectItem>
-                    <SelectItem value="COMBINED">Combined</SelectItem> */}
+                    <SelectItem value="COMBINED">Combined</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -728,24 +899,6 @@ const MediaBuyerDashboardPage = () => {
                       wageringRequirement: e.target.value,
                     })
                   }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="commission">Commission Percentage (%)</Label>
-                <Input
-                  id="commission"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={newLinkForm.commissionPercentage}
-                  onChange={(e) =>
-                    setNewLinkForm({
-                      ...newLinkForm,
-                      commissionPercentage: e.target.value,
-                    })
-                  }
-                  placeholder="1.0"
                 />
               </div>
               <div className="space-y-2">

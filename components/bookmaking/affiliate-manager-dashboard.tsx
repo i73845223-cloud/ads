@@ -21,6 +21,11 @@ import {
   ChevronRight,
   TrendingUp,
   TrendingDown,
+  MousePointerClick,
+  UserPlus,
+  Banknote,
+  Download,
+  DollarSign,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -43,6 +48,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatter, dateFormatter } from "@/lib/utils";
+import { DatePicker } from "../ui/date-picker";
 
 interface ReferredUsersPagination {
   currentPage: number;
@@ -65,6 +71,9 @@ interface MediaBuyerDashboard {
   totalBalance: string;
   commissionPercent: number;
   totalOwnWithdrawals: string;
+  totalFtdCommission: number;
+  totalRegistrations: number;
+  totalFirstDeposits: number;
   assignedPromoCodes: {
     id: string;
     code: string;
@@ -82,6 +91,9 @@ interface MediaBuyerDashboard {
     status: string;
     _count: { userPromoCodes: number };
     influencerEarnings: { amount: string }[];
+    ftdCount: number;
+    ftdCommission: string;
+    registrations: number;
   }[];
   referredUsers: {
     id: string;
@@ -90,7 +102,7 @@ interface MediaBuyerDashboard {
     promoCodeUsed: string;
     joinedAt: string;
     totalCommission: string;
-    ngr: string;
+    hasDeposited: boolean;
     transactions: {
       id: string;
       type: string;
@@ -122,6 +134,10 @@ const MediaBuyerDashboardPage = () => {
   });
   const [loadingDetails, setLoadingDetails] = useState(false);
 
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [hasDepositedFilter, setHasDepositedFilter] = useState("all");
+
   const [newLinkForm, setNewLinkForm] = useState({
     description: "",
     type: "DEPOSIT_BONUS",
@@ -141,8 +157,15 @@ const MediaBuyerDashboardPage = () => {
   const fetchDashboard = async () => {
     try {
       setLoading(true);
+      const params = new URLSearchParams({
+        page: userPage.toString(),
+        limit: "10",
+      });
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      params.set("hasDeposited", hasDepositedFilter);
       const response = await fetch(
-        `/api/media-buyer/dashboard?page=${userPage}&limit=10`
+        `/api/media-buyer/dashboard?${params}`
       );
       if (!response.ok) throw new Error("Failed to fetch");
       const result = await response.json();
@@ -156,15 +179,20 @@ const MediaBuyerDashboardPage = () => {
 
   useEffect(() => {
     fetchDashboard();
-  }, [userPage]);
+  }, [userPage, dateFrom, dateTo, hasDepositedFilter]);
 
   const openBalanceDetails = async (page = 1) => {
     setBalanceDetailsOpen(true);
     setLoadingDetails(true);
     try {
-      const res = await fetch(
-        `/api/media-buyer/balance?details=true&page=${page}&limit=10`
-      );
+      const params = new URLSearchParams({
+        details: 'true',
+        page: page.toString(),
+        limit: '10',
+      });
+      if (dateFrom) params.set('dateFrom', dateFrom);
+      if (dateTo) params.set('dateTo', dateTo);
+      const res = await fetch(`/api/media-buyer/balance?${params}`);
       if (res.ok) {
         const d = await res.json();
         setWithdrawalsList(d.withdrawals);
@@ -180,7 +208,7 @@ const MediaBuyerDashboardPage = () => {
       setLoadingDetails(false);
     }
   };
-
+  
   const handleDetailsPageChange = (newPage: number) => {
     openBalanceDetails(newPage);
   };
@@ -279,6 +307,14 @@ const MediaBuyerDashboardPage = () => {
     router.push(url.pathname + url.search);
   };
 
+  const handleDownload = () => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    params.set("hasDeposited", hasDepositedFilter);
+    window.open(`/api/media-buyer/dashboard/download?${params}`, "_blank");
+  };
+
   if (loading) {
     return (
       <div className="p-4 sm:p-6 max-w-7xl mx-auto">
@@ -311,7 +347,7 @@ const MediaBuyerDashboardPage = () => {
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
               <div className="text-3xl font-bold text-green-400">
-                {formatAmount(data.totalBalance)}
+                $ {(data.totalBalance)}
               </div>
               <Button variant="outline" onClick={() => openBalanceDetails()}>
                 Details
@@ -322,150 +358,142 @@ const MediaBuyerDashboardPage = () => {
       </div>
 
       <Dialog open={balanceDetailsOpen} onOpenChange={setBalanceDetailsOpen}>
-        <DialogContent className="bg-black border-gray-800 max-h-[80vh] overflow-y-auto w-[95vw] sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Balance Calculation</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-6 py-4">
-            <div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="text-gray-400">NGR</div>
-                <div className="text-right font-mono">
-                  {formatAmount(data.totalNgr)}
-                </div>
-                <div className="text-gray-400">Rate</div>
-                <div className="text-right font-mono">
-                  {data.commissionPercent}%
-                </div>
-                <div className="text-gray-400">Commission Earned</div>
-                <div className="text-right font-mono">
-                  {formatAmount(
-                    (
-                      parseFloat(data.totalNgr) *
-                      data.commissionPercent /
-                      100
-                    ).toString()
-                  )}
-                </div>
-                <div className="text-gray-400">Withdrawals</div>
-                <div className="text-right font-mono text-yellow-400">
-                  – {formatAmount(data.totalOwnWithdrawals)}
-                </div>
-                <hr className="col-span-2 border-gray-700" />
-                <div className="text-white font-semibold">Available Balance</div>
-                <div className="text-right font-mono font-bold text-green-400">
-                  {formatAmount(data.totalBalance)}
-                </div>
-              </div>
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-400 mb-2">
-                Your Withdrawals
-              </h3>
-              {loadingDetails ? (
-                <div className="text-center py-4 text-gray-400">Loading...</div>
-              ) : withdrawalsList.length === 0 ? (
-                <div className="text-center py-4 text-gray-500">
-                  No withdrawals yet.
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                    {withdrawalsList.map((w: any) => (
-                      <div
-                        key={w.id}
-                        className="flex justify-between items-center border-b border-gray-800 pb-2 text-sm"
-                      >
-                        <div className="text-gray-300">
-                          {dateFormatter.toIndianDateTime(w.createdAt)}
-                        </div>
-                        <div className="text-yellow-400 font-mono">
-                          {formatAmount(w.amount)}
-                        </div>
-                        <div className="text-gray-500 text-xs">
-                          {w.description || ""}
-                        </div>
+          <DialogContent className="bg-black border-gray-800 max-h-[80vh] overflow-y-auto w-[95vw] sm:max-w-2xl">
+              <DialogHeader>
+                  <DialogTitle>Balance Calculation</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-6 py-4">
+                  <div>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="text-gray-400">FTD Commission</div>
+                          <div className="text-right font-mono">$ {(data?.totalFtdCommission || "0")}</div>
+                          <div className="text-gray-400">Your Withdrawals</div>
+                          <div className="text-right font-mono text-yellow-400">–$ {(data?.totalOwnWithdrawals || "0")}</div>
+                          <hr className="col-span-2 border-gray-700" />
+                          <div className="text-white font-semibold">Available Balance</div>
+                          <div className="text-right font-mono font-bold text-green-400">
+                              $ {(data?.totalBalance || "0")}
+                          </div>
                       </div>
-                    ))}
                   </div>
-                  {withdrawalsPagination.totalPages > 1 && (
-                    <div className="flex items-center justify-between mt-4 pt-2 border-t border-gray-700">
-                      <div className="text-xs text-gray-400">
-                        Page {withdrawalsPagination.page} of{" "}
-                        {withdrawalsPagination.totalPages}
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={withdrawalsPagination.page <= 1}
-                          onClick={() =>
-                            handleDetailsPageChange(
-                              withdrawalsPagination.page - 1
-                            )
-                          }
-                        >
-                          Previous
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={
-                            withdrawalsPagination.page >=
-                            withdrawalsPagination.totalPages
-                          }
-                          onClick={() =>
-                            handleDetailsPageChange(
-                              withdrawalsPagination.page + 1
-                            )
-                          }
-                        >
-                          Next
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setBalanceDetailsOpen(false)}
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+                  <div>
+                      <h3 className="text-sm font-semibold text-gray-400 mb-2">Your Withdrawals</h3>
+                      {loadingDetails ? (
+                          <div className="text-center py-4 text-gray-400">Loading...</div>
+                      ) : withdrawalsList.length === 0 ? (
+                          <div className="text-center py-4 text-gray-500">No withdrawals yet.</div>
+                      ) : (
+                          <>
+                              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                                  {withdrawalsList.map((w: any) => (
+                                      <div key={w.id} className="flex justify-between items-center border-b border-gray-800 pb-2 text-sm">
+                                          <div className="text-gray-300">{dateFormatter.toIndianDateTime(w.createdAt)}</div>
+                                          <div className="text-yellow-400 font-mono">${(w.amount)}</div>
+                                          {/* <div className="text-gray-500 text-xs">{w.description || ''}</div> */}
+                                      </div>
+                                  ))}
+                              </div>
+                              {withdrawalsPagination.totalPages > 1 && (
+                                  <div className="flex items-center justify-between mt-4 pt-2 border-t border-gray-700">
+                                      <div className="text-xs text-gray-400">Page {withdrawalsPagination.page} of {withdrawalsPagination.totalPages}</div>
+                                      <div className="flex gap-2">
+                                          <Button variant="outline" size="sm" disabled={withdrawalsPagination.page <= 1} onClick={() => handleDetailsPageChange(withdrawalsPagination.page - 1)}>Previous</Button>
+                                          <Button variant="outline" size="sm" disabled={withdrawalsPagination.page >= withdrawalsPagination.totalPages} onClick={() => handleDetailsPageChange(withdrawalsPagination.page + 1)}>Next</Button>
+                                      </div>
+                                  </div>
+                              )}
+                          </>
+                      )}
+                  </div>
+              </div>
+              <DialogFooter>
+                  <Button variant="outline" onClick={() => setBalanceDetailsOpen(false)}>Close</Button>
+              </DialogFooter>
+          </DialogContent>
       </Dialog>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 sm:mb-8">
+      <div className="flex flex-col sm:flex-row gap-2 items-center sm:items-end mb-6">
+        <div className="flex justify-between gap-2">
+          <div className="flex flex-col gap-1">
+            <Label className="text-sm text-gray-400">From</Label>
+            <DatePicker
+              date={dateFrom ? new Date(dateFrom + 'T00:00:00') : undefined}
+              onSelect={(d) => {
+                if (d) {
+                  const year = d.getFullYear();
+                  const month = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  setDateFrom(`${year}-${month}-${day}`);
+                } else {
+                  setDateFrom('');
+                }
+              }}
+              placeholder="Start date"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-sm text-gray-400">To</Label>
+            <DatePicker
+              date={dateTo ? new Date(dateTo + 'T00:00:00') : undefined}
+              onSelect={(d) => {
+                if (d) {
+                  const year = d.getFullYear();
+                  const month = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  setDateTo(`${year}-${month}-${day}`);
+                } else {
+                  setDateTo('');
+                }
+              }}
+              placeholder="End date"
+            />
+          </div>
+        </div>
+        <div className="flex justify-between gap-2">
+          <Button onClick={() => fetchDashboard()} className="sm:self-end">
+            Apply
+          </Button>
+          <Button onClick={handleDownload} variant="outline" className="sm:self-end">
+            <Download className="h-4 w-4 mr-1" />
+            Excel
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">
-              Total Referrals
+            <CardTitle className="text-sm font-medium text-gray-400 flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-green-400" />
+              FTD Commission
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center">
-              <Users className="h-5 w-5 text-blue-500 mr-2" />
-              <span className="text-2xl font-bold">{data.totalReferrals}</span>
+            <div className="text-2xl font-bold">
+              $ {(data.totalFtdCommission)}
             </div>
           </CardContent>
         </Card>
         <Card className="bg-black border-gray-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">
-              Total NGR
+            <CardTitle className="text-sm font-medium text-gray-400 flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-green-400" />
+              Registrations
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center">
-              <span className="text-2xl font-bold text-sky-400">
-                {formatAmount(data.totalNgr)}
-              </span>
-            </div>
+            <div className="text-2xl font-bold">{data.totalRegistrations}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-black border-gray-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400 flex items-center gap-2">
+              <Banknote className="h-4 w-4 text-yellow-400" />
+              First Deposits
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.totalFirstDeposits}</div>
           </CardContent>
         </Card>
         <Card className="bg-black border-gray-800">
@@ -475,114 +503,101 @@ const MediaBuyerDashboardPage = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center">
-              <span className="text-2xl font-bold text-orange-400">
-                {formatAmount(data.totalDeposits)}
-              </span>
+            <div className="text-2xl font-bold text-orange-400">
+              {formatAmount(data.totalDeposits)}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-        <h2 className="text-lg sm:text-xl font-semibold">Your Promo Codes</h2>
-        <Button
-          onClick={() => setCreateLinkModalOpen(true)}
-          className="w-full sm:w-auto"
-        >
-          <LinkIcon className="h-4 w-4 mr-2" />
-          Create New Link
-        </Button>
-      </div> */}
-
-      <div className="rounded-lg shadow-sm border mb-8 overflow-x-auto">
-        <Table>
-          <TableHeader>
+      <h2 className="text-lg sm:text-xl font-semibold mb-4">Your Promo Codes</h2>
+    <div className="rounded-lg shadow-sm border mb-8 overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="whitespace-nowrap">Code</TableHead>
+            <TableHead className="whitespace-nowrap">FTD Commission</TableHead>
+            <TableHead className="whitespace-nowrap">FTDs</TableHead>
+            <TableHead className="whitespace-nowrap">Registrations</TableHead>
+            <TableHead className="whitespace-nowrap">Status</TableHead>
+            <TableHead className="whitespace-nowrap">Bonus Details</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.assignedPromoCodes.length === 0 ? (
             <TableRow>
-              <TableHead className="whitespace-nowrap">Code</TableHead>
-              <TableHead className="whitespace-nowrap">Type</TableHead>
-              <TableHead className="whitespace-nowrap">Bonus Details</TableHead>
-              <TableHead className="whitespace-nowrap">Uses</TableHead>
-              <TableHead className="whitespace-nowrap">Status</TableHead>
-              <TableHead className="whitespace-nowrap">Actions</TableHead>
+              <TableCell colSpan={6} className="text-center py-4 text-gray-500">
+                No promo codes created yet.
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.assignedPromoCodes.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-4 text-gray-500">
-                  No promo codes created yet.
-                </TableCell>
-              </TableRow>
-            ) : (
-              data.assignedPromoCodes.map((promo) => (
-                <TableRow key={promo.id}>
-                  <TableCell className="whitespace-nowrap">
-                    <code className="bg-gray-800 px-2 py-1 rounded">
-                      {promo.code}
-                    </code>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">{promo.type}</TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {promo.type === "DEPOSIT_BONUS" && promo.bonusPercentage && (
-                      <span>
-                        {promo.bonusPercentage}% up to{" "}
-                        {formatAmount(promo.maxBonusAmount || "0")}
-                      </span>
-                    )}
-                    {promo.type === "FREE_SPINS" && promo.freeSpinsCount && (
-                      <span>
-                        {promo.freeSpinsCount} spins{" "}
-                        {promo.freeSpinsGame && `on ${promo.freeSpinsGame}`}
-                      </span>
-                    )}
-                    {promo.type === "CASHBACK" && promo.cashbackPercentage && (
-                      <span>{promo.cashbackPercentage}% cashback</span>
-                    )}
-                    {promo.type === "COMBINED" && <span>Multiple bonuses</span>}
-                    {promo.wageringRequirement && (
-                      <span className="block text-xs text-gray-400">
-                        Wager: {promo.wageringRequirement}x
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {promo.currentUses}
-                    {promo.maxUses && ` / ${promo.maxUses}`}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs ${
-                        promo.status === "ACTIVE"
-                          ? "bg-green-900 text-green-300"
-                          : "bg-gray-800 text-gray-400"
-                      }`}
-                    >
-                      {promo.status}
-                    </span>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    <Button
-                      variant="outline"
-                      size="sm"
+          ) : (
+            data.assignedPromoCodes.map((promo) => (
+              <TableRow key={promo.id}>
+                <TableCell className="whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <code className="bg-gray-800 px-2 py-1 rounded">{promo.code}</code>
+                    <button
                       onClick={() => copyToClipboard(promo.code)}
+                      className="text-gray-400 hover:text-white"
                     >
                       {copiedCode === promo.code ? (
-                        <Check className="h-4 w-4 mr-1" />
+                        <Check className="h-4 w-4" />
                       ) : (
-                        <Copy className="h-4 w-4 mr-1" />
+                        <Copy className="h-4 w-4" />
                       )}
-                      Copy Link
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                    </button>
+                  </div>
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  $ {(promo.ftdCommission || "0")}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">{promo.ftdCount}</TableCell>
+                <TableCell className="whitespace-nowrap">{promo.registrations}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <span className={`px-2 py-1 rounded-full text-xs ${
+                    promo.status === "ACTIVE" ? "bg-green-900 text-green-300" : "bg-gray-800 text-gray-400"
+                  }`}>
+                    {promo.status}
+                  </span>
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {promo.type === "DEPOSIT_BONUS" && promo.bonusPercentage && (
+                    <span>{promo.bonusPercentage}% up to {formatAmount(promo.maxBonusAmount || "0")}</span>
+                  )}
+                  {promo.type === "FREE_SPINS" && promo.freeSpinsCount && (
+                    <span>{promo.freeSpinsCount} spins {promo.freeSpinsGame && `on ${promo.freeSpinsGame}`}</span>
+                  )}
+                  {promo.type === "CASHBACK" && promo.cashbackPercentage && (
+                    <span>{promo.cashbackPercentage}% cashback</span>
+                  )}
+                  {promo.type === "COMBINED" && <span>Multiple bonuses</span>}
+                  {promo.wageringRequirement && (
+                    <span className="block text-xs text-gray-400">Wager: {promo.wageringRequirement}x</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
 
-      <h2 className="text-lg sm:text-xl font-semibold mb-4">Referred Users</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg sm:text-xl font-semibold">Referred Users</h2>
+        <Select
+          value={hasDepositedFilter}
+          onValueChange={(value) => setHasDepositedFilter(value)}
+        >
+          <SelectTrigger className="w-[180px] bg-black border-gray-800">
+            <SelectValue placeholder="All" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="deposited">Has Deposited</SelectItem>
+            <SelectItem value="notdeposited">No Deposit</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
       <div className="rounded-lg shadow-sm border overflow-x-auto">
         <Table>
           <TableHeader>
@@ -590,7 +605,7 @@ const MediaBuyerDashboardPage = () => {
               <TableHead className="whitespace-nowrap">User</TableHead>
               <TableHead className="whitespace-nowrap">Promo Code</TableHead>
               <TableHead className="whitespace-nowrap">Joined</TableHead>
-              <TableHead className="whitespace-nowrap">NGR</TableHead>
+              <TableHead className="whitespace-nowrap">Has Deposited</TableHead>
               <TableHead className="whitespace-nowrap">Transactions</TableHead>
             </TableRow>
           </TableHeader>
@@ -623,9 +638,11 @@ const MediaBuyerDashboardPage = () => {
                     {dateFormatter.toIndianDateTime(user.joinedAt)}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    <span className="font-medium">
-                      {formatAmount(user.ngr)}
-                    </span>
+                    {user.hasDeposited ? (
+                      <span className="text-green-400 font-medium">Yes</span>
+                    ) : (
+                      <span className="text-gray-400">No</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Button
@@ -634,9 +651,7 @@ const MediaBuyerDashboardPage = () => {
                       size="sm"
                       className="w-full sm:w-auto"
                     >
-                      <Link
-                        href={`/user/${user.id}/transactions`}
-                      >
+                      <Link href={`/user/${user.id}/transactions`}>
                         View Transactions
                       </Link>
                     </Button>
@@ -719,252 +734,6 @@ const MediaBuyerDashboardPage = () => {
           )}
       </div>
 
-      <Dialog open={createLinkModalOpen} onOpenChange={setCreateLinkModalOpen}>
-        <DialogContent className="bg-black border-gray-800 max-h-[90vh] overflow-y-auto w-[95vw] sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Create Tracking Link with Bonus</DialogTitle>
-            <DialogDescription>
-              Generate a new promo code/link to share with your audience.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateLink}>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="description">Description (optional)</Label>
-                <Input
-                  id="description"
-                  placeholder="e.g., Instagram Campaign"
-                  value={newLinkForm.description}
-                  onChange={(e) =>
-                    setNewLinkForm({
-                      ...newLinkForm,
-                      description: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="type">Bonus Type</Label>
-                <Select
-                  value={newLinkForm.type}
-                  onValueChange={(value) =>
-                    setNewLinkForm({ ...newLinkForm, type: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select bonus type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="DEPOSIT_BONUS">Deposit Bonus</SelectItem>
-                    <SelectItem value="FREE_SPINS">Free Spins</SelectItem>
-                    <SelectItem value="CASHBACK">Cashback</SelectItem>
-                    <SelectItem value="FREE_BET">Free Bet</SelectItem>
-                    <SelectItem value="COMBINED">Combined</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {(newLinkForm.type === "DEPOSIT_BONUS" ||
-                newLinkForm.type === "COMBINED") && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="bonusPercentage">
-                      Bonus Percentage (%)
-                    </Label>
-                    <Input
-                      id="bonusPercentage"
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="500"
-                      placeholder="100"
-                      value={newLinkForm.bonusPercentage}
-                      onChange={(e) =>
-                        setNewLinkForm({
-                          ...newLinkForm,
-                          bonusPercentage: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="maxBonusAmount">
-                      Max Bonus Amount (₹)
-                    </Label>
-                    <Input
-                      id="maxBonusAmount"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="1000"
-                      value={newLinkForm.maxBonusAmount}
-                      onChange={(e) =>
-                        setNewLinkForm({
-                          ...newLinkForm,
-                          maxBonusAmount: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="minDepositAmount">
-                      Min Deposit Amount (₹)
-                    </Label>
-                    <Input
-                      id="minDepositAmount"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="20"
-                      value={newLinkForm.minDepositAmount}
-                      onChange={(e) =>
-                        setNewLinkForm({
-                          ...newLinkForm,
-                          minDepositAmount: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </>
-              )}
-              {(newLinkForm.type === "FREE_SPINS" ||
-                newLinkForm.type === "COMBINED") && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="freeSpinsCount">Free Spins Count</Label>
-                    <Input
-                      id="freeSpinsCount"
-                      type="number"
-                      min="1"
-                      placeholder="50"
-                      value={newLinkForm.freeSpinsCount}
-                      onChange={(e) =>
-                        setNewLinkForm({
-                          ...newLinkForm,
-                          freeSpinsCount: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="freeSpinsGame">Game (optional)</Label>
-                    <Input
-                      id="freeSpinsGame"
-                      placeholder="Starburst"
-                      value={newLinkForm.freeSpinsGame}
-                      onChange={(e) =>
-                        setNewLinkForm({
-                          ...newLinkForm,
-                          freeSpinsGame: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </>
-              )}
-              {newLinkForm.type === "CASHBACK" && (
-                <div className="space-y-2">
-                  <Label htmlFor="cashbackPercentage">
-                    Cashback Percentage (%)
-                  </Label>
-                  <Input
-                    id="cashbackPercentage"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="100"
-                    placeholder="10"
-                    value={newLinkForm.cashbackPercentage}
-                    onChange={(e) =>
-                      setNewLinkForm({
-                        ...newLinkForm,
-                        cashbackPercentage: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="wageringRequirement">
-                  Wagering Requirement (x)
-                </Label>
-                <Input
-                  id="wageringRequirement"
-                  type="number"
-                  min="0"
-                  placeholder="35"
-                  value={newLinkForm.wageringRequirement}
-                  onChange={(e) =>
-                    setNewLinkForm({
-                      ...newLinkForm,
-                      wageringRequirement: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="maxUses">
-                  Maximum Uses (leave empty for unlimited)
-                </Label>
-                <Input
-                  id="maxUses"
-                  type="number"
-                  min="1"
-                  value={newLinkForm.maxUses}
-                  onChange={(e) =>
-                    setNewLinkForm({
-                      ...newLinkForm,
-                      maxUses: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="startDate">Start Date</Label>
-                  <Input
-                    id="startDate"
-                    type="date"
-                    value={newLinkForm.startDate}
-                    onChange={(e) =>
-                      setNewLinkForm({
-                        ...newLinkForm,
-                        startDate: e.target.value,
-                      })
-                    }
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="endDate">End Date (optional)</Label>
-                  <Input
-                    id="endDate"
-                    type="date"
-                    value={newLinkForm.endDate}
-                    onChange={(e) =>
-                      setNewLinkForm({
-                        ...newLinkForm,
-                        endDate: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-            <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setCreateLinkModalOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={creating}>
-                {creating ? "Creating..." : "Generate Link"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
